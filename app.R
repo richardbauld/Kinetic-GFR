@@ -23,18 +23,18 @@ compute_egfr <- function(creat_umol, age, sex) {
 # Example patient (with empty Events)
 example_patients <- list(
   "Patient A" = data.frame(
-    Date = as.Date(c("2025-04-01", "2025-05-05", "2025-05-05", "2025-05-05",
+    Date = as.Date(c("2025-05-05", "2025-05-05", "2025-05-05",
                      "2025-05-06", "2025-05-06", "2025-05-06", "2025-05-07",
                      "2025-05-07", "2025-05-08", "2025-05-09", "2025-05-10",
                      "2025-05-11", "2025-05-12", "2025-05-13", "2025-05-13",
                      "2025-05-14", "2025-05-15", "2025-05-16", "2025-05-17",
                      "2025-05-18", "2025-05-19")),
-    Time = c("08:00", "02:00", "04:45", "12:00", "04:00", "12:00", "22:00",
+    Time = c("02:00", "04:45", "12:00", "04:00", "12:00", "22:00",
              "06:00", "14:00", "04:00", "04:00", "04:00", "04:00", "04:00", "04:00",
              "18:00", "04:00", "02:00", "04:00", "04:00", "04:00", "04:00"),
-    Creatinine = c(3.0*88.4, 2.93*88.4, 3.1*88.4, 3.6*88.4, 4.6*88.4, 4.93*88.4, 3.7*88.4, 2.3*88.4, 1.9*88.4, 1.2*88.4, 1.1*88.4,
+    Creatinine = c(2.93*88.4, 3.1*88.4, 3.6*88.4, 4.6*88.4, 4.93*88.4, 3.7*88.4, 2.3*88.4, 1.9*88.4, 1.2*88.4, 1.1*88.4,
                    1.1*88.4, 1.15*88.4, 1.1*88.4, 1.0*88.4, 1.2*88.4, 1.8*88.4, 3.2*88.4, 3.6*88.4, 3.15*88.4, 3*88.4, 4.7*88.4),
-    Event = rep("", 22),
+    Event = rep("", 21),
     stringsAsFactors = FALSE
   ),
   "Patient B" = data.frame(
@@ -83,11 +83,11 @@ ui <- fluidPage(
       checkboxInput("show_creat_plot", "Show Creatinine Plot", value = FALSE)
     ),
     mainPanel(
-      tableOutput(("debug_table")),
-      DTOutput("creat_table"),
+#      tableOutput(("debug_table")),
       h4("Kinetic GFR Over Time:"),
       plotlyOutput("gfr_plot"),
       textOutput("fixed_vales"),
+      DTOutput("creat_table"),
       conditionalPanel(
         condition = "input.show_creat_plot == true",
         h4("Serum Creatinine Over Time:"),
@@ -189,13 +189,14 @@ server <- function(input, output, session) {
       cr_mean <- (cr1 + cr2) / 2
       delta_cr <- cr2 - cr1
       delta_t <- as.numeric(difftime(df$datetime[i], df$datetime[i - 1], units = "hours"))
-      max_delta_cr <- (cr_ss * egfr_ss) / TBW
+      creat_gen <- (cr_ss * egfr_ss)
+      max_delta_cr <- creat_gen / TBW
       
       numerator <- cr_ss * egfr_ss
       denominator <- cr_mean
       correction <- (24 * delta_cr) / (delta_t * max_delta_cr)
       adj <- 1 - correction
-      adj <- max(0, min(1, adj))
+      adj <- max(0, adj)
       kGFR[i] <- (numerator / denominator) * adj
     }
     
@@ -216,11 +217,11 @@ server <- function(input, output, session) {
     df$Label <- paste0(
       "Date: ", format(df$datetime, "%d/%m/%Y %H:%M"), "<br>",
       "Creatinine: ", round(df$Creatinine, 1), " µmol/L<br>",
-      "eGFR: ", round(df$eGFR, 1), " µmol/L<br>",
       "kGFR: ", ifelse(is.na(df$kGFR), "", paste0(round(df$kGFR, 1), " ml/min/1.73m²")),
       ifelse(df$Event != "", paste0("<br><b>Event:</b> ", df$Event), "")
     )
-    list(data = df, egfr_ss = egfr_ss)
+    list(data = df, egfr_ss = egfr_ss, max_delta_creat = max_delta_cr * 88.4,
+         creat_gen = creat_gen * 88.4)
   })
   
   
@@ -232,16 +233,18 @@ server <- function(input, output, session) {
 
  
     
-  output$debug_table <- renderTable({
-    head(clean_data())
-  })
+#  output$debug_table <- renderTable({
+#    head(clean_data())
+#  })
+  
+  
   
   output$gfr_plot <- renderPlotly({
     df <- clean_data()
     p <- ggplot(df, aes(x = datetime)) +
-      geom_line(aes(y = kGFR), color = "blue") +
+      geom_line(aes(y = kGFR), color = "lightblue") +
       geom_point(aes(y = kGFR, text = Label), size = 2) +
-      geom_line(aes(y = eGFR), color = "darkgreen") +
+      geom_line(aes(y = eGFR), color = "red") +
       geom_point(aes(y = eGFR, text = Label), size = 2) +
       labs(x = "Time", y = "Kinetic eGFR (ml/min/1.73m²)", title = "Kinetic GFR Over Time") +
       theme_minimal()
@@ -269,7 +272,9 @@ server <- function(input, output, session) {
   
   output$fixed_vales <- renderText({
     req(processed_data()$egfr_ss)
-    paste("Baseline eGFR (CKD-EPI 2021):", round(processed_data()$egfr_ss, 1), "ml/min/1.73m²")
+    paste("Baseline eGFR (CKD-EPI 2021):", round(processed_data()$egfr_ss, 1), "ml/min/1.73m² |",
+          "Estimated daily creatinine generation:", round(processed_data()$creat_gen, 1), "umol per day |",
+          "Estimated maximum delta creatinine per day:", round(processed_data()$max_delta_creat, 1), "umol/L")
   })
 }
 
