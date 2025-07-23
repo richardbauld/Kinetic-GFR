@@ -1,0 +1,12 @@
+name: kineticgfr
+title: kineticgfr
+username: richardbauld
+account: richardbauld
+server: shinyapps.io
+hostUrl: https://api.shinyapps.io/v1
+appId: 15115805
+bundleId: 10664612
+url: https://richardbauld.shinyapps.io/kineticgfr/
+version: 1
+asMultiple: FALSE
+asStatic: FALSE

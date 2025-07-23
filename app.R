@@ -62,6 +62,26 @@ example_patients <- list(
     ) * 88.4,
     Event = rep("", 15),
     stringsAsFactors = FALSE
+  ),
+  "Patient D (NSAID)" = data.frame(
+    Date = as.Date(c(
+      "2022-10-17", "2022-10-19", "2022-10-20", "2022-10-20", "2022-10-21", "2022-10-22", "2022-10-23",
+      "2022-11-12", "2022-11-13", "2022-11-14", "2022-11-15", "2022-11-16", "2022-11-16", "2022-11-17",
+      "2022-11-17", "2022-11-18", "2022-11-18", "2022-11-19", "2022-11-20", "2022-11-21", "2022-11-21",
+      "2022-11-22", "2022-11-22", "2022-11-23", "2022-11-24", "2022-11-24"
+      )),
+    Time = c("11:00", "05:19", "05:57", "14:00", "15:40", "05:57", "07:00",
+             "18:44", "14:08", "06:12", "05:52", "06:02", "20:26", "05:36",
+             "15:41", "06:14", "16:23", "02:51", "02:39", "05:02", "17:44",
+             "05:13", "16:55", "05:21", "05:21", "16:56"
+    ),
+    Creatinine = as.numeric(c("97", "146", "342", "301", "90", "76", "73", "53", "50", "50",
+"61", "206", "240", "309", "359", "418", "462", "502", "569", "659",
+"555", "630", "483", "545", "637", "414")
+),
+    Event = c("Pre-op", "NSAID", "", "", "", "", "Ward", "Transfer from BGH", "", "", "", "Theatre", "",
+              "", "", "", "", "", "", "", "IHD", "", "IHD", "", "", "IHD"),
+stringsAsFactors = FALSE
   )
 )
 
@@ -83,8 +103,7 @@ ui <- fluidPage(
       checkboxInput("show_creat_plot", "Show Creatinine Plot", value = FALSE)
     ),
     mainPanel(
-#      tableOutput(("debug_table")),
-      h4("Kinetic GFR Over Time:"),
+ #     tableOutput(("debug_table")),
       plotlyOutput("gfr_plot"),
       textOutput("fixed_vales"),
       DTOutput("creat_table"),
@@ -196,7 +215,7 @@ server <- function(input, output, session) {
       denominator <- cr_mean
       correction <- (24 * delta_cr) / (delta_t * max_delta_cr)
       adj <- 1 - correction
-      adj <- max(0, adj)
+      adj <- min(1, max(0, adj))
       kGFR[i] <- (numerator / denominator) * adj
     }
     
@@ -237,16 +256,23 @@ server <- function(input, output, session) {
 #    head(clean_data())
 #  })
   
-  
+
   
   output$gfr_plot <- renderPlotly({
     df <- clean_data()
+    max_kgfr <- max((df$kGFR), na.rm = TRUE)
+    max_cr <- max(df$Creatinine, na.rm = TRUE)
+    scale_factor <- max_kgfr / max_cr
     p <- ggplot(df, aes(x = datetime)) +
-      geom_line(aes(y = kGFR), color = "lightblue") +
+      geom_line(aes(y = kGFR, color = "kGFR")) +
       geom_point(aes(y = kGFR, text = Label), size = 2) +
-      geom_line(aes(y = eGFR), color = "red") +
-      geom_point(aes(y = eGFR, text = Label), size = 2) +
-      labs(x = "Time", y = "Kinetic eGFR (ml/min/1.73m²)", title = "Kinetic GFR Over Time") +
+      geom_line(aes(y = Creatinine * scale_factor, color = "Creatinine")) +
+      geom_point(aes(y = Creatinine * scale_factor, text = Label), size = 2) +
+      scale_y_continuous(
+        name = "GFR (ml/min/1.73m²)",
+        sec.axis = sec_axis(~ . / scale_factor, name = "Creatinine (µmol/L)")
+      ) +
+      labs(x = "Time", y = "GFR (ml/min)", title = "Kinetic GFR Over Time") +
       theme_minimal()
     event_df <- df[df$Event != "", ]
     if (nrow(event_df) > 0) {
